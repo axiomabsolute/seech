@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"log"
 	"os"
-	"regexp"
-	"strconv"
 
 	"github.com/axiomabsolute/seech/index/sqlite"
 	// "github.com/axiomabsolute/seech/text"
@@ -17,20 +15,8 @@ import (
 // seech search my_index "Bulbasaur"
 // seech clear my_pokedex pokemon.csv
 
-func addInternal(indexName string, filePath string, numberedLine string) {
-	numberedLineRegex := regexp.MustCompile(`\s*(\d+)\s+(.*)`)
-	matches := numberedLineRegex.FindStringSubmatch(numberedLine)
-	if len(matches) != 3 {
-		log.Fatal("Did not find correct number of submatches")
-	}
-	lineNumberString := matches[1]
-	line := matches[2]
-
-	lineNumber, err := strconv.Atoi(lineNumberString)
-	if err != nil {
-		log.Fatal("Cannot convert line number to int: " + err.Error())
-	}
-	sqlite.TrigramAddToIndex(indexName, filePath, lineNumber, line)
+func addInternal(indexName string, filePath string, numberedLines []string) {
+	sqlite.TrigramAddToIndex(indexName, filePath, numberedLines)
 }
 
 func add(c *cli.Context) error {
@@ -41,7 +27,7 @@ func add(c *cli.Context) error {
 	log.Printf("index(%s, %s, %s)\n", indexName, filePath, numberedLine)
 
 	sqlite.CheckAndCreate(indexName)
-	addInternal(indexName, filePath, numberedLine)
+	addInternal(indexName, filePath, []string{numberedLine})
 
 	return nil
 }
@@ -63,8 +49,16 @@ func batch(c *cli.Context) error {
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanLines)
 
+	batch := []string{}
 	for scanner.Scan() {
-		addInternal(indexName, filePath, scanner.Text())
+		batch = append(batch, scanner.Text())
+		if len(batch) == 5000 {
+			addInternal(indexName, filePath, batch)
+			batch = []string{}
+		}
+	}
+	if len(batch) > 0 {
+		addInternal(indexName, filePath, batch)
 	}
 
 	return nil

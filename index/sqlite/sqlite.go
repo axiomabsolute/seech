@@ -2,8 +2,12 @@ package sqlite
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/gchaincl/dotsql"
 	_ "github.com/mattn/go-sqlite3"
@@ -57,15 +61,39 @@ func CheckAndCreate(indexPath string) {
 	}
 }
 
-func TrigramAddToIndex(indexPath string, filePath string, lineNumber int, doc string) {
+func TrigramAddToIndex(indexPath string, filePath string, docs []string) {
 	db, err := sql.Open("sqlite3", indexPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	query := "INSERT INTO sources (file_path, line_number, doc) VALUES (?, ?, ?);"
-	_, err = db.Exec(query, filePath, lineNumber, doc)
+	query := "INSERT INTO sources (file_path, line_number, doc) VALUES %s;"
+
+	valueStrings := make([]string, 0, len(docs))
+	valueArgs := make([]interface{}, 0, len(docs)*3)
+
+	for _, doc := range docs {
+		numberedLineRegex := regexp.MustCompile(`\s*(\d+)\s+(.*)`)
+		matches := numberedLineRegex.FindStringSubmatch(doc)
+		if len(matches) != 3 {
+			log.Fatal("Did not find correct number of submatches")
+		}
+		lineNumberString := matches[1]
+		line := matches[2]
+
+		lineNumber, err := strconv.Atoi(lineNumberString)
+		if err != nil {
+			log.Fatal("Cannot convert line number to int: " + err.Error())
+		}
+		valueStrings = append(valueStrings, "(?, ?, ?)")
+		valueArgs = append(valueArgs, filePath)
+		valueArgs = append(valueArgs, lineNumber)
+		valueArgs = append(valueArgs, line)
+	}
+
+	stmt := fmt.Sprintf(query, strings.Join(valueStrings, ","))
+	_, err = db.Exec(stmt, valueArgs...)
 	if err != nil {
 		log.Fatal(err)
 	} else {
